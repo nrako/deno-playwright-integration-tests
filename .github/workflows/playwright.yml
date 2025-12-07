@@ -142,7 +142,7 @@ jobs:
         if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
         run: |
           PW_VERSION="${{ steps.versions.outputs.playwright_version }}"
-          npm install @playwright/test@${PW_VERSION} serve@latest
+          npm install @playwright/test@${PW_VERSION} playwright@${PW_VERSION} serve@latest ts-node typescript @types/node
           npx playwright install --with-deps
 
       - name: Install Playwright browsers (Deno)
@@ -155,8 +155,20 @@ jobs:
         if: steps.check.outputs.skip != 'true' && env.skip != 'true'
         run: mkdir -p screenshots
 
-      - name: Run tests (Node)
-        id: test_node
+      - name: Run plain Playwright test (Node)
+        id: test_node_plain
+        if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
+        timeout-minutes: 1
+        env:
+          PW_VERSION: ${{ steps.versions.outputs.playwright_version }}
+        run: |
+          npx serve app -p 3000 &
+          sleep 2
+          npx ts-node tests/plain-playwright.test.ts
+        continue-on-error: true
+
+      - name: Run test runner (Node)
+        id: test_node_runner
         if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
         timeout-minutes: 1
         run: npx playwright test
@@ -205,27 +217,23 @@ jobs:
         if: steps.check.outputs.skip != 'true' && env.skip != 'true'
         run: |
           if [ "${{ matrix.runtime }}" == "node" ]; then
-            MAIN_STATUS="${{ steps.test_node.outcome }}"
+            PLAIN_STATUS="${{ steps.test_node_plain.outcome }}"
+            RUNNER_STATUS="${{ steps.test_node_runner.outcome }}"
             HEADED_STATUS="${{ steps.test_node_headed.outcome }}"
-            echo "main_status=$MAIN_STATUS" >> $GITHUB_OUTPUT
-            echo "headed_status=$HEADED_STATUS" >> $GITHUB_OUTPUT
-            if [ "$MAIN_STATUS" == "success" ] && [ "$HEADED_STATUS" == "success" ]; then
-              echo "overall=pass" >> $GITHUB_OUTPUT
-            else
-              echo "overall=fail" >> $GITHUB_OUTPUT
-            fi
           else
             PLAIN_STATUS="${{ steps.test_deno_plain.outcome }}"
             RUNNER_STATUS="${{ steps.test_deno_runner.outcome }}"
             HEADED_STATUS="${{ steps.test_deno_headed.outcome }}"
-            echo "plain_status=$PLAIN_STATUS" >> $GITHUB_OUTPUT
-            echo "runner_status=$RUNNER_STATUS" >> $GITHUB_OUTPUT
-            echo "headed_status=$HEADED_STATUS" >> $GITHUB_OUTPUT
-            if [ "$PLAIN_STATUS" == "success" ] && [ "$RUNNER_STATUS" == "success" ] && [ "$HEADED_STATUS" == "success" ]; then
-              echo "overall=pass" >> $GITHUB_OUTPUT
-            else
-              echo "overall=fail" >> $GITHUB_OUTPUT
-            fi
+          fi
+
+          echo "plain_status=$PLAIN_STATUS" >> $GITHUB_OUTPUT
+          echo "runner_status=$RUNNER_STATUS" >> $GITHUB_OUTPUT
+          echo "headed_status=$HEADED_STATUS" >> $GITHUB_OUTPUT
+
+          if [ "$PLAIN_STATUS" == "success" ] && [ "$RUNNER_STATUS" == "success" ] && [ "$HEADED_STATUS" == "success" ]; then
+            echo "overall=pass" >> $GITHUB_OUTPUT
+          else
+            echo "overall=fail" >> $GITHUB_OUTPUT
           fi
 
       - name: Create result release
@@ -273,18 +281,11 @@ jobs:
 
           EOF
 
-          if [ "$RUNTIME" == "node" ]; then
-            echo "| Test | Status |" >> release-notes.md
-            echo "|------|--------|" >> release-notes.md
-            echo "| Main | ${{ steps.results.outputs.main_status }} |" >> release-notes.md
-            echo "| Headed | ${{ steps.results.outputs.headed_status }} |" >> release-notes.md
-          else
-            echo "| Test | Status |" >> release-notes.md
-            echo "|------|--------|" >> release-notes.md
-            echo "| Plain Playwright | ${{ steps.results.outputs.plain_status }} |" >> release-notes.md
-            echo "| @playwright/test runner | ${{ steps.results.outputs.runner_status }} |" >> release-notes.md
-            echo "| Headed | ${{ steps.results.outputs.headed_status }} |" >> release-notes.md
-          fi
+          echo "| Test | Status |" >> release-notes.md
+          echo "|------|--------|" >> release-notes.md
+          echo "| Plain Playwright | ${{ steps.results.outputs.plain_status }} |" >> release-notes.md
+          echo "| @playwright/test runner | ${{ steps.results.outputs.runner_status }} |" >> release-notes.md
+          echo "| Headed | ${{ steps.results.outputs.headed_status }} |" >> release-notes.md
 
           cat >> release-notes.md << EOF
 
@@ -304,20 +305,7 @@ jobs:
             echo '  "v8_version": "'"$V8_VERSION"'",' >> release-notes.md
           fi
 
-          if [ "$RUNTIME" == "node" ]; then
-            cat >> release-notes.md << EOF
-            "playwright_version": "$PW_VERSION",
-            "os": "ubuntu-latest",
-            "overall": "$OVERALL",
-            "tests": {
-              "main": "${{ steps.results.outputs.main_status }}",
-              "headed": "${{ steps.results.outputs.headed_status }}"
-            },
-            "workflow_run_url": "$WORKFLOW_URL"
-          }
-          EOF
-          else
-            cat >> release-notes.md << EOF
+          cat >> release-notes.md << EOF
             "playwright_version": "$PW_VERSION",
             "os": "ubuntu-latest",
             "overall": "$OVERALL",
@@ -329,7 +317,6 @@ jobs:
             "workflow_run_url": "$WORKFLOW_URL"
           }
           EOF
-          fi
 
           echo '```' >> release-notes.md
           echo '</details>' >> release-notes.md
@@ -378,26 +365,33 @@ jobs:
           |----------|---------|-----|------------|--------|------|---------|
           EOF
 
-          # Get releases and parse with jq, outputting table rows directly
-          gh release list --limit 100 --json tagName,body | jq -r '
-            .[] | select(.tagName | startswith("result-")) |
-            .body as $body |
-            # Extract JSON from the body (it may have markdown around it now)
-            # Try to parse as JSON directly first, or extract from code block
-            (try (($body | fromjson) // null) catch null) //
-            (try (($body | capture("```json\\s*(?<json>[\\s\\S]*?)\\s*```") | .json | fromjson) // null) catch null) |
-            select(. != null) |
-            [
-              .runtime // "",
-              .runtime_version // "",
-              (.v8_version // "-"),
-              .playwright_version // "",
-              (if .overall == "pass" then "✅" else "❌" end),
-              (.timestamp | split("T")[0]),
-              "[Run](\(.workflow_run_url))"
-            ] |
-            "| " + join(" | ") + " |"
-          ' >> compatibility-table.md
+          # Get list of result releases, then fetch each body
+          for tag in $(gh release list --limit 100 --json tagName -q '.[] | select(.tagName | startswith("result-")) | .tagName'); do
+            BODY=$(gh release view "$tag" --json body -q '.body')
+
+            # Extract JSON: try parsing as JSON first, then extract from ```json code block
+            if echo "$BODY" | jq -e '.' >/dev/null 2>&1; then
+              JSON="$BODY"
+            else
+              # Extract JSON from markdown code block using sed
+              JSON=$(echo "$BODY" | sed -n '/```json/,/```/p' | sed '1d;$d')
+            fi
+
+            if [ -n "$JSON" ] && echo "$JSON" | jq -e '.' >/dev/null 2>&1; then
+              echo "$JSON" | jq -r '
+                [
+                  .runtime // "",
+                  .runtime_version // "",
+                  (.v8_version // "-"),
+                  .playwright_version // "",
+                  (if .overall == "pass" then "✅" else "❌" end),
+                  (.timestamp | split("T")[0]),
+                  "[Run](\(.workflow_run_url))"
+                ] |
+                "| " + join(" | ") + " |"
+              ' >> compatibility-table.md
+            fi
+          done
 
           # Sort table by date (newest first), keeping header
           head -4 compatibility-table.md > compatibility-sorted.md
