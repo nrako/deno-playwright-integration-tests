@@ -90,5 +90,10 @@ Note: Past Deno canary versions are not available; only the current canary can b
 <!-- COMPATIBILITY_TABLE_START -->
 ## Compatibility Matrix
 
-*No test results yet. Run the CI workflow to populate this table.*
+| Runtime | Version | V8 | Playwright | Status | Date | Details |
+|---------|---------|-----|------------|--------|------|---------|
 <!-- COMPATIBILITY_TABLE_END -->
+## Compatibility Matrix
+
+| Runtime | Version | V8 | Playwright | Status | Date | Details |
+|---------|---------|-----|------------|--------|------|---------|
