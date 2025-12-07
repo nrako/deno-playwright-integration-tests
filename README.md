@@ -91,7 +91,7 @@ Note: Past Deno canary versions are not available; only the current canary can b
 ## Compatibility Matrix
 
 | Runtime | Version | V8 | Playwright | Status | Date | Details |
-|---------|---------|-----|------------|--------|------|---------|
+|----------|---------|-----|------------|--------|------|---------|
 <!-- COMPATIBILITY_TABLE_END -->
 ## Compatibility Matrix
 
