@@ -158,21 +158,21 @@ jobs:
       - name: Run tests (Node)
         id: test_node
         if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: npx playwright test
         continue-on-error: true
 
       - name: Run headed test (Node)
         id: test_node_headed
         if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
-        timeout-minutes: 3
+        timeout-minutes: 1
         run: xvfb-run npx playwright test --headed --project=chromium
         continue-on-error: true
 
       - name: Run plain Playwright test (Deno)
         id: test_deno_plain
         if: startsWith(matrix.runtime, 'deno') && steps.check.outputs.skip != 'true' && env.skip != 'true'
-        timeout-minutes: 3
+        timeout-minutes: 1
         env:
           PW_VERSION: ${{ steps.versions.outputs.playwright_version }}
         run: |
@@ -185,7 +185,7 @@ jobs:
       - name: Run test runner (Deno)
         id: test_deno_runner
         if: startsWith(matrix.runtime, 'deno') && steps.check.outputs.skip != 'true' && env.skip != 'true'
-        timeout-minutes: 3
+        timeout-minutes: 1
         env:
           PW_VERSION: ${{ steps.versions.outputs.playwright_version }}
         run: deno run -A npm:@playwright/test@${PW_VERSION} test
@@ -194,7 +194,7 @@ jobs:
       - name: Run headed test (Deno)
         id: test_deno_headed
         if: startsWith(matrix.runtime, 'deno') && steps.check.outputs.skip != 'true' && env.skip != 'true'
-        timeout-minutes: 3
+        timeout-minutes: 1
         env:
           PW_VERSION: ${{ steps.versions.outputs.playwright_version }}
         run: xvfb-run deno run -A npm:@playwright/test@${PW_VERSION} test --headed --project=chromium
@@ -236,53 +236,113 @@ jobs:
           TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           VERSION_KEY="${{ steps.versions.outputs.version_key }}"
           TAG_NAME="result-${VERSION_KEY}"
+          OVERALL="${{ steps.results.outputs.overall }}"
+          RUNTIME="${{ matrix.runtime }}"
+          RUNTIME_VERSION="${{ steps.versions.outputs.runtime_version }}"
+          PW_VERSION="${{ steps.versions.outputs.playwright_version }}"
+          V8_VERSION="${{ steps.versions.outputs.v8_version }}"
+          WORKFLOW_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          # Build JSON based on runtime
-          if [ "${{ matrix.runtime }}" == "node" ]; then
-            cat > result.json << EOF
+          # Status emoji
+          if [ "$OVERALL" == "pass" ]; then
+            STATUS_EMOJI="✅"
+          else
+            STATUS_EMOJI="❌"
+          fi
+
+          # Build markdown release notes
+          cat > release-notes.md << EOF
+          ## $STATUS_EMOJI Test Result: ${OVERALL^^}
+
+          | Property | Value |
+          |----------|-------|
+          | Runtime | \`$RUNTIME\` |
+          | Version | \`$RUNTIME_VERSION\` |
+          EOF
+
+          if [ -n "$V8_VERSION" ]; then
+            echo "| V8 | \`$V8_VERSION\` |" >> release-notes.md
+          fi
+
+          cat >> release-notes.md << EOF
+          | Playwright | \`$PW_VERSION\` |
+          | Date | $TIMESTAMP |
+          | OS | ubuntu-latest |
+
+          ### Test Results
+
+          EOF
+
+          if [ "$RUNTIME" == "node" ]; then
+            echo "| Test | Status |" >> release-notes.md
+            echo "|------|--------|" >> release-notes.md
+            echo "| Main | ${{ steps.results.outputs.main_status }} |" >> release-notes.md
+            echo "| Headed | ${{ steps.results.outputs.headed_status }} |" >> release-notes.md
+          else
+            echo "| Test | Status |" >> release-notes.md
+            echo "|------|--------|" >> release-notes.md
+            echo "| Plain Playwright | ${{ steps.results.outputs.plain_status }} |" >> release-notes.md
+            echo "| @playwright/test runner | ${{ steps.results.outputs.runner_status }} |" >> release-notes.md
+            echo "| Headed | ${{ steps.results.outputs.headed_status }} |" >> release-notes.md
+          fi
+
+          cat >> release-notes.md << EOF
+
+          [View workflow run]($WORKFLOW_URL)
+
+          <details>
+          <summary>Raw JSON data</summary>
+
+          \`\`\`json
           {
-            "timestamp": "${TIMESTAMP}",
-            "runtime": "${{ matrix.runtime }}",
-            "runtime_version": "${{ steps.versions.outputs.runtime_version }}",
-            "playwright_version": "${{ steps.versions.outputs.playwright_version }}",
+            "timestamp": "$TIMESTAMP",
+            "runtime": "$RUNTIME",
+            "runtime_version": "$RUNTIME_VERSION",
+          EOF
+
+          if [ -n "$V8_VERSION" ]; then
+            echo '  "v8_version": "'"$V8_VERSION"'",' >> release-notes.md
+          fi
+
+          if [ "$RUNTIME" == "node" ]; then
+            cat >> release-notes.md << EOF
+            "playwright_version": "$PW_VERSION",
             "os": "ubuntu-latest",
-            "overall": "${{ steps.results.outputs.overall }}",
+            "overall": "$OVERALL",
             "tests": {
               "main": "${{ steps.results.outputs.main_status }}",
               "headed": "${{ steps.results.outputs.headed_status }}"
             },
-            "workflow_run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            "workflow_run_url": "$WORKFLOW_URL"
           }
           EOF
           else
-            cat > result.json << EOF
-          {
-            "timestamp": "${TIMESTAMP}",
-            "runtime": "${{ matrix.runtime }}",
-            "runtime_version": "${{ steps.versions.outputs.runtime_version }}",
-            "v8_version": "${{ steps.versions.outputs.v8_version }}",
-            "playwright_version": "${{ steps.versions.outputs.playwright_version }}",
+            cat >> release-notes.md << EOF
+            "playwright_version": "$PW_VERSION",
             "os": "ubuntu-latest",
-            "overall": "${{ steps.results.outputs.overall }}",
+            "overall": "$OVERALL",
             "tests": {
               "plain": "${{ steps.results.outputs.plain_status }}",
               "runner": "${{ steps.results.outputs.runner_status }}",
               "headed": "${{ steps.results.outputs.headed_status }}"
             },
-            "workflow_run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            "workflow_run_url": "$WORKFLOW_URL"
           }
           EOF
           fi
 
+          echo '```' >> release-notes.md
+          echo '</details>' >> release-notes.md
+
           echo "Creating release: $TAG_NAME"
-          cat result.json
+          cat release-notes.md
 
           # Delete existing release if force re-running
           gh release delete "$TAG_NAME" --yes 2>/dev/null || true
 
           gh release create "$TAG_NAME" \
-            --title "${{ matrix.runtime }} + Playwright ${{ steps.versions.outputs.playwright_version }}" \
-            --notes "$(cat result.json)"
+            --title "$STATUS_EMOJI $RUNTIME + Playwright $PW_VERSION" \
+            --notes-file release-notes.md
 
       - name: Upload test results
         if: failure() && steps.check.outputs.skip != 'true' && env.skip != 'true'
@@ -310,82 +370,64 @@ jobs:
         run: |
           echo "Fetching all result releases..."
 
-          # Get all releases starting with 'result-'
-          RELEASES=$(gh release list --limit 100 --json tagName,name,body | jq -r '.[] | select(.tagName | startswith("result-"))')
-
           # Start building the table
           cat > compatibility-table.md << 'EOF'
           ## Compatibility Matrix
 
           | Runtime | Version | V8 | Playwright | Status | Date | Details |
-          |---------|---------|-----|------------|--------|------|---------|
+          |----------|---------|-----|------------|--------|------|---------|
           EOF
 
-          # Parse each release and add to table
-          gh release list --limit 100 --json tagName,body | jq -c '.[] | select(.tagName | startswith("result-"))' | while read -r release; do
-            BODY=$(echo "$release" | jq -r '.body')
-
-            RUNTIME=$(echo "$BODY" | jq -r '.runtime // empty')
-            VERSION=$(echo "$BODY" | jq -r '.runtime_version // empty')
-            V8=$(echo "$BODY" | jq -r '.v8_version // "-"')
-            PW=$(echo "$BODY" | jq -r '.playwright_version // empty')
-            OVERALL=$(echo "$BODY" | jq -r '.overall // empty')
-            TIMESTAMP=$(echo "$BODY" | jq -r '.timestamp // empty')
-            URL=$(echo "$BODY" | jq -r '.workflow_run_url // empty')
-
-            if [ -n "$RUNTIME" ] && [ -n "$VERSION" ]; then
-              DATE=$(echo "$TIMESTAMP" | cut -d'T' -f1)
-              if [ "$OVERALL" == "pass" ]; then
-                STATUS="✅"
-              else
-                STATUS="❌"
-              fi
-              echo "| $RUNTIME | $VERSION | $V8 | $PW | $STATUS | $DATE | [Run]($URL) |" >> compatibility-table.md
-            fi
-          done
+          # Get releases and parse with jq, outputting table rows directly
+          gh release list --limit 100 --json tagName,body | jq -r '
+            .[] | select(.tagName | startswith("result-")) |
+            .body as $body |
+            # Extract JSON from the body (it may have markdown around it now)
+            # Try to parse as JSON directly first, or extract from code block
+            (try (($body | fromjson) // null) catch null) //
+            (try (($body | capture("```json\\s*(?<json>[\\s\\S]*?)\\s*```") | .json | fromjson) // null) catch null) |
+            select(. != null) |
+            [
+              .runtime // "",
+              .runtime_version // "",
+              (.v8_version // "-"),
+              .playwright_version // "",
+              (if .overall == "pass" then "✅" else "❌" end),
+              (.timestamp | split("T")[0]),
+              "[Run](\(.workflow_run_url))"
+            ] |
+            "| " + join(" | ") + " |"
+          ' >> compatibility-table.md
 
           # Sort table by date (newest first), keeping header
           head -4 compatibility-table.md > compatibility-sorted.md
           tail -n +5 compatibility-table.md | sort -t'|' -k6 -r >> compatibility-sorted.md
           mv compatibility-sorted.md compatibility-table.md
 
+          echo "Generated table:"
+          cat compatibility-table.md
+
       - name: Update README
         run: |
-          if [ ! -f README.md ]; then
-            cat > README.md << 'EOF'
-          # Deno + Playwright Integration Tests
-
-          This repository tracks compatibility between Deno/Node.js and Playwright.
-
-          <!-- COMPATIBILITY_TABLE_START -->
-          <!-- COMPATIBILITY_TABLE_END -->
-          EOF
-          fi
-
-          # Check if markers exist
-          if ! grep -q "COMPATIBILITY_TABLE_START" README.md; then
-            echo "" >> README.md
-            echo "<!-- COMPATIBILITY_TABLE_START -->" >> README.md
-            echo "<!-- COMPATIBILITY_TABLE_END -->" >> README.md
-          fi
-
-          # Replace content between markers
-          sed -i '/<!-- COMPATIBILITY_TABLE_START -->/,/<!-- COMPATIBILITY_TABLE_END -->/!b;/<!-- COMPATIBILITY_TABLE_END -->/!d;r compatibility-table.md' README.md
-          sed -i '/<!-- COMPATIBILITY_TABLE_END -->/i <!-- COMPATIBILITY_TABLE_START -->' README.md
-
-          # Simpler approach: use awk
+          # Use awk to replace content between markers
           awk '
             /<!-- COMPATIBILITY_TABLE_START -->/ {
               print
-              system("cat compatibility-table.md")
+              while ((getline line < "compatibility-table.md") > 0) print line
+              close("compatibility-table.md")
               skip=1
               next
             }
             /<!-- COMPATIBILITY_TABLE_END -->/ {
               skip=0
+              print
+              next
             }
             !skip {print}
           ' README.md > README.tmp && mv README.tmp README.md
+
+          echo "Updated README:"
+          tail -30 README.md
 
       - name: Commit README changes
         run: |
