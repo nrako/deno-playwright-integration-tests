@@ -69,4 +69,26 @@ GitHub Actions runs tests on:
 - Deno stable
 - Deno canary
 
-Daily scheduled runs catch regressions when new Deno versions are released.
+Daily scheduled runs catch regressions when new Deno/Playwright versions are released.
+
+The CI is version-aware: it only runs tests for version combinations that haven't been tested yet. Results are stored as GitHub releases and the compatibility matrix below is auto-updated.
+
+### Manual Run Options
+
+Use `workflow_dispatch` to test specific version combinations:
+
+| Input | Description | Example |
+|-------|-------------|---------|
+| `force` | Re-test even if already tested | `true` |
+| `runtime` | Specific runtime to test | `node`, `deno-stable`, `deno-canary`, `all` |
+| `node_version` | Node.js version | `22.12.0`, `lts/*`, `latest` |
+| `deno_version` | Deno version | `2.1.4`, `vx.x.x` (latest stable) |
+| `playwright_version` | Playwright version | `1.49.1`, `1.48.0`, `latest` |
+
+Note: Past Deno canary versions are not available; only the current canary can be tested.
+
+<!-- COMPATIBILITY_TABLE_START -->
+## Compatibility Matrix
+
+*No test results yet. Run the CI workflow to populate this table.*
+<!-- COMPATIBILITY_TABLE_END -->

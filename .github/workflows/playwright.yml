@@ -7,11 +7,39 @@ on:
   schedule:
     - cron: '0 6 * * *' # Daily at 6am UTC
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force re-run even if already tested'
+        type: boolean
+        default: false
+      runtime:
+        description: 'Specific runtime to test (or all)'
+        type: choice
+        options:
+          - all
+          - node
+          - deno-stable
+          - deno-canary
+        default: all
+      node_version:
+        description: 'Node.js version (e.g., 22.12.0, lts/*, latest)'
+        type: string
+        default: 'lts/*'
+      deno_version:
+        description: 'Deno version (e.g., 2.1.4, vx.x.x for latest stable, canary)'
+        type: string
+        default: ''
+      playwright_version:
+        description: 'Playwright version (e.g., 1.49.1, latest)'
+        type: string
+        default: 'latest'
 
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -24,21 +52,85 @@ jobs:
         if: matrix.runtime == 'node'
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
+          node-version: ${{ inputs.node_version || 'lts/*' }}
 
       - name: Setup Deno (stable)
         if: matrix.runtime == 'deno-stable'
         uses: denoland/setup-deno@v2
         with:
-          deno-version: vx.x.x
+          # Use custom version if provided, otherwise latest stable
+          deno-version: ${{ inputs.deno_version || 'vx.x.x' }}
 
       - name: Setup Deno (canary)
         if: matrix.runtime == 'deno-canary'
         uses: denoland/setup-deno@v2
         with:
+          # For canary, custom version is ignored (only latest canary available)
           deno-version: canary
 
+      - name: Determine Playwright version to use
+        id: pw_version
+        run: |
+          INPUT_PW="${{ inputs.playwright_version }}"
+          if [ -z "$INPUT_PW" ] || [ "$INPUT_PW" == "latest" ]; then
+            # Get latest version from npm
+            PW_TARGET=$(npm show @playwright/test version)
+          else
+            PW_TARGET="$INPUT_PW"
+          fi
+          echo "target=$PW_TARGET" >> $GITHUB_OUTPUT
+          echo "Using Playwright version: $PW_TARGET"
+
+      - name: Detect versions
+        id: versions
+        run: |
+          PW_VERSION="${{ steps.pw_version.outputs.target }}"
+
+          if [ "${{ matrix.runtime }}" == "node" ]; then
+            RUNTIME_VERSION=$(node --version)
+          else
+            DENO_OUTPUT=$(deno --version)
+            # For canary, version already contains commit hash (e.g., 2.5.6+8c46ac3)
+            RUNTIME_VERSION=$(echo "$DENO_OUTPUT" | head -1 | awk '{print $2}')
+            V8_VERSION=$(echo "$DENO_OUTPUT" | grep v8 | awk '{print $2}')
+            echo "v8_version=$V8_VERSION" >> $GITHUB_OUTPUT
+          fi
+          VERSION_KEY="${{ matrix.runtime }}-${RUNTIME_VERSION}_playwright-${PW_VERSION}"
+          echo "runtime_version=$RUNTIME_VERSION" >> $GITHUB_OUTPUT
+          echo "playwright_version=$PW_VERSION" >> $GITHUB_OUTPUT
+          echo "version_key=$VERSION_KEY" >> $GITHUB_OUTPUT
+          echo "Detected: $VERSION_KEY"
+
+      - name: Check if already tested
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION_KEY="${{ steps.versions.outputs.version_key }}"
+          RELEASE=$(gh release view "result-${VERSION_KEY}" --json tagName 2>/dev/null || echo "")
+          FORCE="${{ inputs.force }}"
+          SELECTED_RUNTIME="${{ inputs.runtime }}"
+
+          # Skip if: release exists AND force is not true AND (runtime is 'all' OR matches selected)
+          if [ -n "$RELEASE" ] && [ "$FORCE" != "true" ]; then
+            if [ "$SELECTED_RUNTIME" == "all" ] || [ "$SELECTED_RUNTIME" == "${{ matrix.runtime }}" ] || [ -z "$SELECTED_RUNTIME" ]; then
+              echo "Version combination already tested: $VERSION_KEY"
+              echo "skip=true" >> $GITHUB_OUTPUT
+            else
+              echo "skip=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip runtime if not selected
+        if: inputs.runtime != '' && inputs.runtime != 'all' && inputs.runtime != matrix.runtime
+        run: |
+          echo "Skipping ${{ matrix.runtime }} - only running ${{ inputs.runtime }}"
+          echo "skip=true" >> $GITHUB_ENV
+
       - name: Print runtime version
+        if: steps.check.outputs.skip != 'true' && env.skip != 'true'
         run: |
           if [ "${{ matrix.runtime }}" == "node" ]; then
             node --version
@@ -46,54 +138,263 @@ jobs:
             deno --version
           fi
 
-      - name: Install npm dependencies (Node)
-        if: matrix.runtime == 'node'
-        run: npm install
-
-      - name: Install Playwright browsers (Node)
-        if: matrix.runtime == 'node'
-        run: npx playwright install --with-deps
+      - name: Install Playwright (Node)
+        if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
+        run: |
+          PW_VERSION="${{ steps.versions.outputs.playwright_version }}"
+          npm install @playwright/test@${PW_VERSION} serve@latest
+          npx playwright install --with-deps
 
       - name: Install Playwright browsers (Deno)
-        if: startsWith(matrix.runtime, 'deno')
-        run: deno run -A npm:playwright install --with-deps
+        if: startsWith(matrix.runtime, 'deno') && steps.check.outputs.skip != 'true' && env.skip != 'true'
+        run: |
+          PW_VERSION="${{ steps.versions.outputs.playwright_version }}"
+          deno run -A npm:playwright@${PW_VERSION} install --with-deps
 
       - name: Create screenshots directory
+        if: steps.check.outputs.skip != 'true' && env.skip != 'true'
         run: mkdir -p screenshots
 
       - name: Run tests (Node)
-        if: matrix.runtime == 'node'
+        id: test_node
+        if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
         timeout-minutes: 3
         run: npx playwright test
+        continue-on-error: true
 
       - name: Run headed test (Node)
-        if: matrix.runtime == 'node'
+        id: test_node_headed
+        if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
         timeout-minutes: 3
         run: xvfb-run npx playwright test --headed --project=chromium
+        continue-on-error: true
 
       - name: Run plain Playwright test (Deno)
-        if: startsWith(matrix.runtime, 'deno')
+        id: test_deno_plain
+        if: startsWith(matrix.runtime, 'deno') && steps.check.outputs.skip != 'true' && env.skip != 'true'
         timeout-minutes: 3
+        env:
+          PW_VERSION: ${{ steps.versions.outputs.playwright_version }}
         run: |
           deno task serve &
           sleep 2
-          deno task test:plain
+          # Run plain test with specific Playwright version
+          deno run -A --import-map=<(echo '{"imports":{"playwright":"npm:playwright@'$PW_VERSION'"}}') tests/plain-playwright.test.ts
+        continue-on-error: true
 
       - name: Run test runner (Deno)
-        if: startsWith(matrix.runtime, 'deno')
+        id: test_deno_runner
+        if: startsWith(matrix.runtime, 'deno') && steps.check.outputs.skip != 'true' && env.skip != 'true'
         timeout-minutes: 3
-        run: deno task test:runner
+        env:
+          PW_VERSION: ${{ steps.versions.outputs.playwright_version }}
+        run: deno run -A npm:@playwright/test@${PW_VERSION} test
+        continue-on-error: true
 
       - name: Run headed test (Deno)
-        if: startsWith(matrix.runtime, 'deno')
+        id: test_deno_headed
+        if: startsWith(matrix.runtime, 'deno') && steps.check.outputs.skip != 'true' && env.skip != 'true'
         timeout-minutes: 3
-        run: xvfb-run deno task test:headed
+        env:
+          PW_VERSION: ${{ steps.versions.outputs.playwright_version }}
+        run: xvfb-run deno run -A npm:@playwright/test@${PW_VERSION} test --headed --project=chromium
+        continue-on-error: true
+
+      - name: Determine test results
+        id: results
+        if: steps.check.outputs.skip != 'true' && env.skip != 'true'
+        run: |
+          if [ "${{ matrix.runtime }}" == "node" ]; then
+            MAIN_STATUS="${{ steps.test_node.outcome }}"
+            HEADED_STATUS="${{ steps.test_node_headed.outcome }}"
+            echo "main_status=$MAIN_STATUS" >> $GITHUB_OUTPUT
+            echo "headed_status=$HEADED_STATUS" >> $GITHUB_OUTPUT
+            if [ "$MAIN_STATUS" == "success" ] && [ "$HEADED_STATUS" == "success" ]; then
+              echo "overall=pass" >> $GITHUB_OUTPUT
+            else
+              echo "overall=fail" >> $GITHUB_OUTPUT
+            fi
+          else
+            PLAIN_STATUS="${{ steps.test_deno_plain.outcome }}"
+            RUNNER_STATUS="${{ steps.test_deno_runner.outcome }}"
+            HEADED_STATUS="${{ steps.test_deno_headed.outcome }}"
+            echo "plain_status=$PLAIN_STATUS" >> $GITHUB_OUTPUT
+            echo "runner_status=$RUNNER_STATUS" >> $GITHUB_OUTPUT
+            echo "headed_status=$HEADED_STATUS" >> $GITHUB_OUTPUT
+            if [ "$PLAIN_STATUS" == "success" ] && [ "$RUNNER_STATUS" == "success" ] && [ "$HEADED_STATUS" == "success" ]; then
+              echo "overall=pass" >> $GITHUB_OUTPUT
+            else
+              echo "overall=fail" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Create result release
+        if: steps.check.outputs.skip != 'true' && env.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          VERSION_KEY="${{ steps.versions.outputs.version_key }}"
+          TAG_NAME="result-${VERSION_KEY}"
+
+          # Build JSON based on runtime
+          if [ "${{ matrix.runtime }}" == "node" ]; then
+            cat > result.json << EOF
+          {
+            "timestamp": "${TIMESTAMP}",
+            "runtime": "${{ matrix.runtime }}",
+            "runtime_version": "${{ steps.versions.outputs.runtime_version }}",
+            "playwright_version": "${{ steps.versions.outputs.playwright_version }}",
+            "os": "ubuntu-latest",
+            "overall": "${{ steps.results.outputs.overall }}",
+            "tests": {
+              "main": "${{ steps.results.outputs.main_status }}",
+              "headed": "${{ steps.results.outputs.headed_status }}"
+            },
+            "workflow_run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          else
+            cat > result.json << EOF
+          {
+            "timestamp": "${TIMESTAMP}",
+            "runtime": "${{ matrix.runtime }}",
+            "runtime_version": "${{ steps.versions.outputs.runtime_version }}",
+            "v8_version": "${{ steps.versions.outputs.v8_version }}",
+            "playwright_version": "${{ steps.versions.outputs.playwright_version }}",
+            "os": "ubuntu-latest",
+            "overall": "${{ steps.results.outputs.overall }}",
+            "tests": {
+              "plain": "${{ steps.results.outputs.plain_status }}",
+              "runner": "${{ steps.results.outputs.runner_status }}",
+              "headed": "${{ steps.results.outputs.headed_status }}"
+            },
+            "workflow_run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          fi
+
+          echo "Creating release: $TAG_NAME"
+          cat result.json
+
+          # Delete existing release if force re-running
+          gh release delete "$TAG_NAME" --yes 2>/dev/null || true
+
+          gh release create "$TAG_NAME" \
+            --title "${{ matrix.runtime }} + Playwright ${{ steps.versions.outputs.playwright_version }}" \
+            --notes "$(cat result.json)"
 
       - name: Upload test results
-        if: failure()
+        if: failure() && steps.check.outputs.skip != 'true' && env.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.runtime }}
           path: |
             screenshots/
             test-results/
+
+  update-readme:
+    needs: test
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Generate compatibility table
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Fetching all result releases..."
+
+          # Get all releases starting with 'result-'
+          RELEASES=$(gh release list --limit 100 --json tagName,name,body | jq -r '.[] | select(.tagName | startswith("result-"))')
+
+          # Start building the table
+          cat > compatibility-table.md << 'EOF'
+          ## Compatibility Matrix
+
+          | Runtime | Version | V8 | Playwright | Status | Date | Details |
+          |---------|---------|-----|------------|--------|------|---------|
+          EOF
+
+          # Parse each release and add to table
+          gh release list --limit 100 --json tagName,body | jq -c '.[] | select(.tagName | startswith("result-"))' | while read -r release; do
+            BODY=$(echo "$release" | jq -r '.body')
+
+            RUNTIME=$(echo "$BODY" | jq -r '.runtime // empty')
+            VERSION=$(echo "$BODY" | jq -r '.runtime_version // empty')
+            V8=$(echo "$BODY" | jq -r '.v8_version // "-"')
+            PW=$(echo "$BODY" | jq -r '.playwright_version // empty')
+            OVERALL=$(echo "$BODY" | jq -r '.overall // empty')
+            TIMESTAMP=$(echo "$BODY" | jq -r '.timestamp // empty')
+            URL=$(echo "$BODY" | jq -r '.workflow_run_url // empty')
+
+            if [ -n "$RUNTIME" ] && [ -n "$VERSION" ]; then
+              DATE=$(echo "$TIMESTAMP" | cut -d'T' -f1)
+              if [ "$OVERALL" == "pass" ]; then
+                STATUS="✅"
+              else
+                STATUS="❌"
+              fi
+              echo "| $RUNTIME | $VERSION | $V8 | $PW | $STATUS | $DATE | [Run]($URL) |" >> compatibility-table.md
+            fi
+          done
+
+          # Sort table by date (newest first), keeping header
+          head -4 compatibility-table.md > compatibility-sorted.md
+          tail -n +5 compatibility-table.md | sort -t'|' -k6 -r >> compatibility-sorted.md
+          mv compatibility-sorted.md compatibility-table.md
+
+      - name: Update README
+        run: |
+          if [ ! -f README.md ]; then
+            cat > README.md << 'EOF'
+          # Deno + Playwright Integration Tests
+
+          This repository tracks compatibility between Deno/Node.js and Playwright.
+
+          <!-- COMPATIBILITY_TABLE_START -->
+          <!-- COMPATIBILITY_TABLE_END -->
+          EOF
+          fi
+
+          # Check if markers exist
+          if ! grep -q "COMPATIBILITY_TABLE_START" README.md; then
+            echo "" >> README.md
+            echo "<!-- COMPATIBILITY_TABLE_START -->" >> README.md
+            echo "<!-- COMPATIBILITY_TABLE_END -->" >> README.md
+          fi
+
+          # Replace content between markers
+          sed -i '/<!-- COMPATIBILITY_TABLE_START -->/,/<!-- COMPATIBILITY_TABLE_END -->/!b;/<!-- COMPATIBILITY_TABLE_END -->/!d;r compatibility-table.md' README.md
+          sed -i '/<!-- COMPATIBILITY_TABLE_END -->/i <!-- COMPATIBILITY_TABLE_START -->' README.md
+
+          # Simpler approach: use awk
+          awk '
+            /<!-- COMPATIBILITY_TABLE_START -->/ {
+              print
+              system("cat compatibility-table.md")
+              skip=1
+              next
+            }
+            /<!-- COMPATIBILITY_TABLE_END -->/ {
+              skip=0
+            }
+            !skip {print}
+          ' README.md > README.tmp && mv README.tmp README.md
+
+      - name: Commit README changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update compatibility matrix"
+            git push
+          fi
