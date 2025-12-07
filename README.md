@@ -69,7 +69,7 @@ GitHub Actions runs tests on:
 - Deno stable
 - Deno canary
 
-Daily scheduled runs catch regressions when new Deno/Playwright versions are released.
+Weekly scheduled runs (Fridays 6am UTC) catch regressions when new Deno/Playwright versions are released.
 
 The CI is version-aware: it only runs tests for version combinations that haven't been tested yet. Results are stored as GitHub releases and the compatibility matrix below is auto-updated.
 
