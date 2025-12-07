@@ -1,0 +1,8 @@
+{
+  "name": "deno-playwright-integration-tests",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "serve": "latest"
+  }
+}

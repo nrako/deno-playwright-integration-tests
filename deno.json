@@ -1,0 +1,15 @@
+{
+  "tasks": {
+    "serve": "deno run -A jsr:@std/http/file-server app/ -p 3000",
+    "test:plain": "deno run -A tests/plain-playwright.test.ts",
+    "test:runner": "deno run -A npm:@playwright/test test",
+    "test:headed": "deno run -A npm:@playwright/test test --headed --project=chromium",
+    "test": "deno task test:plain && deno task test:runner",
+    "test:node": "npx playwright test"
+  },
+  "imports": {
+    "@playwright/test": "npm:@playwright/test@latest",
+    "playwright": "npm:playwright@latest"
+  },
+  "nodeModulesDir": "auto"
+}

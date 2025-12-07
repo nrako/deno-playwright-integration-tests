@@ -1,0 +1,99 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * *' # Daily at 6am UTC
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [node, deno-stable, deno-canary]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: matrix.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Setup Deno (stable)
+        if: matrix.runtime == 'deno-stable'
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: vx.x.x
+
+      - name: Setup Deno (canary)
+        if: matrix.runtime == 'deno-canary'
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: canary
+
+      - name: Print runtime version
+        run: |
+          if [ "${{ matrix.runtime }}" == "node" ]; then
+            node --version
+          else
+            deno --version
+          fi
+
+      - name: Install npm dependencies (Node)
+        if: matrix.runtime == 'node'
+        run: npm install
+
+      - name: Install Playwright browsers (Node)
+        if: matrix.runtime == 'node'
+        run: npx playwright install --with-deps
+
+      - name: Install Playwright browsers (Deno)
+        if: startsWith(matrix.runtime, 'deno')
+        run: deno run -A npm:playwright install --with-deps
+
+      - name: Create screenshots directory
+        run: mkdir -p screenshots
+
+      - name: Run tests (Node)
+        if: matrix.runtime == 'node'
+        timeout-minutes: 3
+        run: npx playwright test
+
+      - name: Run headed test (Node)
+        if: matrix.runtime == 'node'
+        timeout-minutes: 3
+        run: xvfb-run npx playwright test --headed --project=chromium
+
+      - name: Run plain Playwright test (Deno)
+        if: startsWith(matrix.runtime, 'deno')
+        timeout-minutes: 3
+        run: |
+          deno task serve &
+          sleep 2
+          deno task test:plain
+
+      - name: Run test runner (Deno)
+        if: startsWith(matrix.runtime, 'deno')
+        timeout-minutes: 3
+        run: deno task test:runner
+
+      - name: Run headed test (Deno)
+        if: startsWith(matrix.runtime, 'deno')
+        timeout-minutes: 3
+        run: xvfb-run deno task test:headed
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.runtime }}
+          path: |
+            screenshots/
+            test-results/

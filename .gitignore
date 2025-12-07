@@ -1,0 +1,6 @@
+node_modules/
+screenshots/*.png
+test-results/
+playwright-report/
+deno.lock
+package-lock.json
