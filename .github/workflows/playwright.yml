@@ -142,7 +142,7 @@ jobs:
         if: matrix.runtime == 'node' && steps.check.outputs.skip != 'true' && env.skip != 'true'
         run: |
           PW_VERSION="${{ steps.versions.outputs.playwright_version }}"
-          npm install @playwright/test@${PW_VERSION} playwright@${PW_VERSION} serve@latest ts-node typescript @types/node
+          npm install @playwright/test@${PW_VERSION} playwright@${PW_VERSION} serve@latest
           npx playwright install --with-deps
 
       - name: Install Playwright browsers (Deno)
@@ -164,7 +164,7 @@ jobs:
         run: |
           npx serve app -p 3000 &
           sleep 2
-          npx ts-node tests/plain-playwright.test.ts
+          node --experimental-strip-types tests/plain-playwright.test.ts
         continue-on-error: true
 
       - name: Run test runner (Node)
