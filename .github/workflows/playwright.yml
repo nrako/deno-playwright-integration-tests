@@ -88,6 +88,9 @@ jobs:
 
           if [ "${{ matrix.runtime }}" == "node" ]; then
             RUNTIME_VERSION=$(node --version)
+            # Get V8 version from Node
+            V8_VERSION=$(node -e "console.log(process.versions.v8)")
+            echo "v8_version=$V8_VERSION" >> $GITHUB_OUTPUT
           else
             DENO_OUTPUT=$(deno --version)
             # For canary, version already contains commit hash (e.g., 2.5.6+8c46ac3)
@@ -361,7 +364,7 @@ jobs:
           cat > compatibility-table.md << 'EOF'
           ## Compatibility Matrix
 
-          | Runtime | Version | V8 | Playwright | Status | Date | Details |
+          | Runtime | Runtime Version | V8 | Playwright | Status | Date | Details |
           |----------|---------|-----|------------|--------|------|---------|
           EOF
 
@@ -395,7 +398,7 @@ jobs:
 
           # Sort table by date (newest first), keeping header
           head -4 compatibility-table.md > compatibility-sorted.md
-          tail -n +5 compatibility-table.md | sort -t'|' -k6 -r >> compatibility-sorted.md
+          tail -n +5 compatibility-table.md | sort -t'|' -k7 -r >> compatibility-sorted.md
           mv compatibility-sorted.md compatibility-table.md
 
           echo "Generated table:"
