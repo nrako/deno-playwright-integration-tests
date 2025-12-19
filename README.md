@@ -90,13 +90,15 @@ Note: Past Deno canary versions are not available; only the current canary can b
 <!-- COMPATIBILITY_TABLE_START -->
 ## Compatibility Matrix
 
-| Runtime | Version | V8 | Playwright | Status | Date | Details |
+| Runtime | Runtime Version | V8 | Playwright | Status | Date | Details |
 |----------|---------|-----|------------|--------|------|---------|
-| deno-stable | 2.6.0 | 14.2.231.17-rusty | 1.57.0 | ❌ | 2025-12-12 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20157978459) |
-| deno-canary | 2.5.6+b8b549d | 14.2.231.17-rusty | 1.57.0 | ❌ | 2025-12-12 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20157978459) |
-| deno-canary | 2.5.6+8c46ac3 | 14.2.231.17-rusty | 1.57.0 | ❌ | 2025-12-07 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20010717455) |
+| deno-stable | 2.6.2 | 14.2.231.17-rusty | 1.57.0 | ❌ | 2025-12-19 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20378005659) |
+| deno-canary | 2.6.2+9cd8077 | 14.2.231.17-rusty | 1.57.0 | ❌ | 2025-12-19 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20378005659) |
 | node | v24.12.0 | - | 1.57.0 | ✅ | 2025-12-19 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20361477922) |
 | deno-canary | 2.6.1+e76aa96 | 14.2.231.17-rusty | 1.57.0 | ✅ | 2025-12-19 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20361477922) |
+| deno-stable | 2.6.0 | 14.2.231.17-rusty | 1.57.0 | ❌ | 2025-12-12 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20157978459) |
+| deno-canary | 2.5.6+b8b549d | 14.2.231.17-rusty | 1.57.0 | ❌ | 2025-12-12 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20157978459) |
 | node | v24.11.1 | - | 1.57.0 | ✅ | 2025-12-07 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20010717455) |
 | deno-stable | 2.5.6 | 14.0.365.5-rusty | 1.57.0 | ✅ | 2025-12-07 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20010717455) |
+| deno-canary | 2.5.6+8c46ac3 | 14.2.231.17-rusty | 1.57.0 | ❌ | 2025-12-07 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/20010717455) |
 <!-- COMPATIBILITY_TABLE_END -->
