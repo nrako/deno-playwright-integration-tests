@@ -1,21 +1,6 @@
 # Deno + Playwright Integration Tests
 
-Minimal reproduction repository for testing Playwright compatibility with Deno.
-
-## The Issue
-
-The `@playwright/test` runner times out during `browser.newContext` when run with Deno, while plain Playwright API works fine.
-
-| Runtime     | Plain Playwright | @playwright/test |
-|-------------|------------------|------------------|
-| Node        | PASS             | PASS             |
-| Deno stable | PASS             | FAIL (timeout)   |
-| Deno canary | PASS             | FAIL (timeout)   |
-
-## Related Issues
-
-- [denoland/deno#27623](https://github.com/denoland/deno/issues/27623) - Playwright tests stopped working in Deno v2.1.5
-- [denoland/deno#16899](https://github.com/denoland/deno/issues/16899) - NPM: Playwright does not work
+Minimal reproduction repository for testing Playwright compatibility with Deno. Tracks which Deno/Node + Playwright version combinations work, with results stored as GitHub releases and an auto-updated compatibility matrix.
 
 ## Setup
 
