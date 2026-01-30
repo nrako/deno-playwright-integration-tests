@@ -77,6 +77,9 @@ Note: Past Deno canary versions are not available; only the current canary can b
 
 | Runtime | Runtime Version | V8 | Playwright | Status | Date | Details |
 |----------|---------|-----|------------|--------|------|---------|
+| node | v24.13.0 | 13.6.233.17-node.37 | 1.58.0 | ✅ | 2026-01-30 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/21506454695) |
+| deno-stable | 2.6.7 | 14.5.201.2-rusty | 1.58.0 | ✅ | 2026-01-30 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/21506454695) |
+| deno-canary | 2.6.7+f4c20db | 14.5.201.2-rusty | 1.58.0 | ✅ | 2026-01-30 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/21506454695) |
 | node | v24.13.0 | 13.6.233.17-node.37 | 1.57.0 | ✅ | 2026-01-23 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/21276461386) |
 | deno-stable | 2.6.6 | 14.2.231.17-rusty | 1.57.0 | ✅ | 2026-01-23 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/21276461386) |
 | deno-canary | 2.6.6+b910888 | 14.2.231.17-rusty | 1.57.0 | ✅ | 2026-01-23 | [Run](https://github.com/nrako/deno-playwright-integration-tests/actions/runs/21276461386) |
